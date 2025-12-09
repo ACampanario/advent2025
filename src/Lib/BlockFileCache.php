@@ -1,5 +1,4 @@
 <?php
-// src/Lib/BlockFileCache.php
 namespace App\Lib;
 
 use Psr\SimpleCache\CacheInterface;
@@ -36,7 +35,6 @@ class BlockFileCache implements CacheInterface
 
     public function set($key, $value, $ttl = null): bool
     {
-        // $value puede ser un array de varias filas
         $file = $this->getPath($key);
         return file_put_contents($file, serialize($value)) !== false;
     }

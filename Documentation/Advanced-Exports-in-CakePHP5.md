@@ -1,27 +1,27 @@
-<?php
-declare(strict_types=1);
+# Advanced Exports in CakePHP5: Styled Excel, CSV, and Real-Time Charts
 
-/**
- * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
- *
- * Licensed under The MIT License
- * For full copyright and license information, please see the LICENSE.txt
- * Redistributions of files must retain the above copyright notice.
- *
- * @copyright Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
- * @link      https://cakephp.org CakePHP(tm) Project
- * @since     0.2.9
- * @license   https://opensource.org/licenses/mit-license.php MIT License
- */
-namespace App\Controller;
+### 1.- Run migrations
 
-use App\Lib\BlockFileCache;
-use Cake\Core\Configure;
-use Cake\Http\Exception\ForbiddenException;
-use Cake\Http\Exception\NotFoundException;
-use Cake\Http\Response;
-use Cake\View\Exception\MissingTemplateException;
+Run migration to create a table named "sales" with 10000 rows
+
+### 2.- Add with composer the library https://github.com/PHPOffice/PhpSpreadsheet
+
+```
+composer require "phpoffice/phpspreadsheet"
+```
+
+### 2.- Create the logic in an export function to query the data and generate an XLS or CSV file
+
+for example in src/Controller/PagesController.php
+
+and add to config/routes.php
+
+```
+$builder->connect('/export', ['controller' => 'Pages', 'action' => 'export']);
+```
+
+```
+
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
@@ -32,57 +32,13 @@ use PhpOffice\PhpSpreadsheet\Chart\PlotArea;
 use PhpOffice\PhpSpreadsheet\Chart\Title;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Settings;
+use App\Lib\BlockFileCache;
 
+...
+...
+...
 
-/**
- * Static content controller
- *
- * This controller will render views from templates/Pages/
- *
- * @link https://book.cakephp.org/5/en/controllers/pages-controller.html
- */
-class PagesController extends AppController
-{
-    /**
-     * Displays a view
-     *
-     * @param string ...$path Path segments.
-     * @return \Cake\Http\Response|null
-     * @throws \Cake\Http\Exception\ForbiddenException When a directory traversal attempt.
-     * @throws \Cake\View\Exception\MissingTemplateException When the view file could not
-     *   be found and in debug mode.
-     * @throws \Cake\Http\Exception\NotFoundException When the view file could not
-     *   be found and not in debug mode.
-     * @throws \Cake\View\Exception\MissingTemplateException In debug mode.
-     */
-    public function display(string ...$path): ?Response
-    {
-        if (!$path) {
-            return $this->redirect('/');
-        }
-        if (in_array('..', $path, true) || in_array('.', $path, true)) {
-            throw new ForbiddenException();
-        }
-        $page = $subpage = null;
-
-        if (!empty($path[0])) {
-            $page = $path[0];
-        }
-        if (!empty($path[1])) {
-            $subpage = $path[1];
-        }
-        $this->set(compact('page', 'subpage'));
-
-        try {
-            return $this->render(implode('/', $path));
-        } catch (MissingTemplateException $exception) {
-            if (Configure::read('debug')) {
-                throw $exception;
-            }
-            throw new NotFoundException();
-        }
-    }
-    public function export(): Response
+public function export(): Response
     {
         // Measure start time and memory
         $startTime = microtime(true);
@@ -199,7 +155,19 @@ class PagesController extends AppController
 
         return $this->response;
     }
+```
 
+### 3.- Create the logic for download file by his name
+
+for example in src/Controller/PagesController.php
+
+and add to config/routes.php
+
+```
+$builder->connect('/download', ['controller' => 'Pages', 'action' => 'download']);
+```
+
+```
     public function download()
     {
         $filename = $this->getRequest()->getQuery('filename');
@@ -218,4 +186,124 @@ class PagesController extends AppController
             ->withDownload($filename)
             ->withFile($tempPath);
     }
+```
+
+### 4.- Create a class to use as cache
+
+This class is based on Psr\SimpleCache\CacheInterface
+
+Is used to write a file on disk in a minimum blockSize of 100
+
+for example in src/Lib/BlockFileCache.php
+
+```
+namespace App\Lib;
+
+use Psr\SimpleCache\CacheInterface;
+
+class BlockFileCache implements CacheInterface
+{
+    protected string $cacheDir;
+    protected int $blockSize;
+
+    public function __construct(string $cacheDir, int $blockSize = 100)
+    {
+        $this->cacheDir = rtrim($cacheDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        $this->blockSize = $blockSize;
+
+        if (!is_dir($this->cacheDir)) {
+            mkdir($this->cacheDir, 0777, true);
+        }
+    }
+
+    protected function getPath(string $key): string
+    {
+        return $this->cacheDir . md5($key) . '.cache';
+    }
+
+    public function get($key, $default = null): mixed
+    {
+        $file = $this->getPath($key);
+        if (!file_exists($file)) {
+            return $default;
+        }
+        $data = file_get_contents($file);
+        return $data !== false ? unserialize($data) : $default;
+    }
+
+    public function set($key, $value, $ttl = null): bool
+    {
+        $file = $this->getPath($key);
+        return file_put_contents($file, serialize($value)) !== false;
+    }
+
+    public function delete($key): bool
+    {
+        $file = $this->getPath($key);
+        if (file_exists($file)) {
+            unlink($file);
+        }
+        return true;
+    }
+
+    public function clear(): bool
+    {
+        $files = glob($this->cacheDir . '*.cache');
+        foreach ($files as $file) {
+            unlink($file);
+        }
+        return true;
+    }
+
+    public function getMultiple($keys, $default = null): iterable
+    {
+        $results = [];
+        foreach ($keys as $key) {
+            $results[$key] = $this->get($key, $default);
+        }
+        return $results;
+    }
+
+    public function setMultiple($values, $ttl = null): bool
+    {
+        foreach ($values as $key => $value) {
+            $this->set($key, $value, $ttl);
+        }
+        return true;
+    }
+
+    public function deleteMultiple($keys): bool
+    {
+        foreach ($keys as $key) {
+            $this->delete($key);
+        }
+        return true;
+    }
+
+    public function has($key): bool
+    {
+        return file_exists($this->getPath($key));
+    }
 }
+```
+
+# Functionality on the Front End of the Application
+
+- There are several calls to the `export` method to:
+    - Export all
+    - Export to CSV
+    - Export applying a filter sent in the URL
+- When clicking on a link, a request is made to generate the file in a temporary directory and return information about the process.
+- Once the information is displayed on the right side, the file download is triggered.
+
+The generated Excel sheet contains custom styles and a real-time chart calculated during the export using the functions provided by **phpoffice/phpspreadsheet**.
+
+![result](result.png)
+
+The displayed information relates to memory usage and execution time. Cache handling can be delegated and therefore separated from the business logic without issues.
+
+For a large amount of data, it is necessary to use a cache implementation to reduce memory consumption. However, depending on the implementation, the processing time increases — for example, in this case, when using disk-based cache.
+
+![result](result.png)
+
+
