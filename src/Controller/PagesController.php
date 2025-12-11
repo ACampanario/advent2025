@@ -139,26 +139,41 @@ class PagesController extends AppController
             $rowNum++;
         }
 
-        // Graph Quantity vs Price
-        $totalQuantity = array_sum(array_map(fn($s) => $s->quantity, $sales));
-        $totalPrice = array_sum(array_map(fn($s) => $s->price, $sales));
+        // Graph
+        $labels = [
+            new DataSeriesValues('String', "Worksheet!A2:A10001", null, 100)
+        ];
 
-        $labels = [new DataSeriesValues('String', null, null, 2, ['Total Quantity', 'Total Price'])];
-        $values = [new DataSeriesValues('Number', null, null, 2, [$totalQuantity, $totalPrice])];
+        $quantityValues = new DataSeriesValues('Number', "Worksheet!D2:D101", null, 100);
+        $priceValues    = new DataSeriesValues('Number', "Worksheet!E2:E101", null, 100);
+
+        $quantityName = new DataSeriesValues('String', "Worksheet!D1", null, 1);
+        $priceName    = new DataSeriesValues('String', "Worksheet!E1", null, 1);
 
         $series = new DataSeries(
-            DataSeries::TYPE_PIECHART,
-            null,
-            range(0, count($values) - 1),
+            DataSeries::TYPE_BARCHART,
+            DataSeries::GROUPING_CLUSTERED,
+            [0, 1],
+            [$quantityName, $priceName],
             $labels,
-            [],
-            $values
+            [$quantityValues, $priceValues]
         );
 
+        $series->setPlotDirection(DataSeries::DIRECTION_COL);
+
         $plotArea = new PlotArea(null, [$series]);
-        $chart = new Chart('Sales Overview', new Title('Quantity vs Price'), null, $plotArea);
-        $chart->setTopLeftPosition('K2');
-        $chart->setBottomRightPosition('O17');
+        $title = new Title('Quantity & Price per Order');
+
+        $chart = new Chart(
+            'Sales Chart',
+            $title,
+            null,
+            $plotArea
+        );
+
+        $chart->setTopLeftPosition('I2');
+        $chart->setBottomRightPosition('U30');
+
         $sheet->addChart($chart);
 
         // Save file

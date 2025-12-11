@@ -304,6 +304,6 @@ The displayed information relates to memory usage and execution time. Cache hand
 
 For a large amount of data, it is necessary to use a cache implementation to reduce memory consumption. However, depending on the implementation, the processing time increases — for example, in this case, when using disk-based cache.
 
-![result](result.png)
+![result](export.png)
 
 
