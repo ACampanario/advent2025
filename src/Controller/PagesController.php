@@ -16,23 +16,17 @@ declare(strict_types=1);
  */
 namespace App\Controller;
 
-use App\Lib\BlockFileCache;
+use App\Lib\Charts\ApexChartsFormatter;
+use App\Lib\Charts\ChartJsFormatter;
+use App\Lib\Charts\JqPlotFormatter;
+use App\Service\BusinessService;
+use App\Service\SalesService;
+use App\Service\SpreadsheetService;
 use Cake\Core\Configure;
 use Cake\Http\Exception\ForbiddenException;
 use Cake\Http\Exception\NotFoundException;
 use Cake\Http\Response;
 use Cake\View\Exception\MissingTemplateException;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Writer\Csv;
-use PhpOffice\PhpSpreadsheet\Chart\Chart;
-use PhpOffice\PhpSpreadsheet\Chart\DataSeries;
-use PhpOffice\PhpSpreadsheet\Chart\DataSeriesValues;
-use PhpOffice\PhpSpreadsheet\Chart\PlotArea;
-use PhpOffice\PhpSpreadsheet\Chart\Title;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Settings;
-
 
 /**
  * Static content controller
@@ -88,104 +82,17 @@ class PagesController extends AppController
         $startTime = microtime(true);
 
         // Query params
-        $format = $this->request->getQuery('format') ?? 'xlsx'; // 'csv' o 'xlsx'
-        $quantityFilter = $this->request->getQuery('quantity');
-        $cacheParam = $this->request->getQuery('cache');
-
-        // Using cache
-        if ($cacheParam !== null) {
-            $cachePath = TMP . 'cache' . DS . 'phpspreadsheet' . DS;
-            $cache = new BlockFileCache($cachePath, 100);
-            Settings::setCache($cache);
-        }
+        $format = $this->getRequest()->getQuery('format') ?? 'xlsx'; // 'csv' o 'xlsx'
+        $filters['quantity'] = $this->getRequest()->getQuery('quantity');
+        $cache = $this->getRequest()->getQuery('cache') != null;
 
         // Get data
-        $query = $this->fetchTable('Sales')->find('all')->orderBy(['Sales.id' => 'ASC']);
-        if ($quantityFilter !== null) {
-            $query->where(['Sales.quantity' => (int)$quantityFilter]);
-        }
-        $sales = $query->toArray();
+        $service = new SalesService($filters);
+        $sales = $service->getSales();
 
         // Create spreadsheet
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-
-        // Headers
-        $headers = ['Order Number', 'Customer Name', 'Product', 'Quantity', 'Price', 'Created'];
-        $sheet->fromArray($headers, null, 'A1');
-
-        // Header styles
-        $sheet->getStyle('A1:F1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:F1')->getFill()
-            ->setFillType(Fill::FILL_SOLID)
-            ->getStartColor()->setRGB('4CAF50');
-
-        // Data with alternating rows
-        $rowNum = 2;
-        foreach ($sales as $sale) {
-            $sheet->setCellValue("A{$rowNum}", $sale->order_number)
-                ->setCellValue("B{$rowNum}", $sale->customer_name)
-                ->setCellValue("C{$rowNum}", $sale->product)
-                ->setCellValue("D{$rowNum}", $sale->quantity)
-                ->setCellValue("E{$rowNum}", $sale->price)
-                ->setCellValue("F{$rowNum}", $sale->created->format('Y-m-d H:i:s'));
-
-            if ($rowNum % 2 === 0) {
-                $sheet->getStyle("A{$rowNum}:F{$rowNum}")
-                    ->getFill()
-                    ->setFillType(Fill::FILL_SOLID)
-                    ->getStartColor()->setRGB('E8F5E9');
-            }
-            $rowNum++;
-        }
-
-        // Graph
-        $labels = [
-            new DataSeriesValues('String', "Worksheet!A2:A10001", null, 100)
-        ];
-
-        $quantityValues = new DataSeriesValues('Number', "Worksheet!D2:D101", null, 100);
-        $priceValues    = new DataSeriesValues('Number', "Worksheet!E2:E101", null, 100);
-
-        $quantityName = new DataSeriesValues('String', "Worksheet!D1", null, 1);
-        $priceName    = new DataSeriesValues('String', "Worksheet!E1", null, 1);
-
-        $series = new DataSeries(
-            DataSeries::TYPE_BARCHART,
-            DataSeries::GROUPING_CLUSTERED,
-            [0, 1],
-            [$quantityName, $priceName],
-            $labels,
-            [$quantityValues, $priceValues]
-        );
-
-        $series->setPlotDirection(DataSeries::DIRECTION_COL);
-
-        $plotArea = new PlotArea(null, [$series]);
-        $title = new Title('Quantity & Price per Order');
-
-        $chart = new Chart(
-            'Sales Chart',
-            $title,
-            null,
-            $plotArea
-        );
-
-        $chart->setTopLeftPosition('I2');
-        $chart->setBottomRightPosition('U30');
-
-        $sheet->addChart($chart);
-
-        // Save file
-        $filename = 'sales_export_' . date('Ymd_His') . '.' . $format;
-        $tempPath = TMP . $filename;
-        if ($format === 'csv') {
-            $writer = new Csv($spreadsheet);
-        } else {
-            $writer = new Xlsx($spreadsheet);
-            $writer->setIncludeCharts(true);
-        }
-        $writer->save($tempPath);
+        $service = new SpreadsheetService($cache);
+        $filename = $service->generate($sales, $format);
 
         // Measure memory and final time
         $endTime = microtime(true);
@@ -193,14 +100,14 @@ class PagesController extends AppController
         $peakMem = memory_get_peak_usage();
 
         $cacheFiles = 0;
-        if ($cacheParam !== null) {
+        if ($cache) {
             clearstatcache(true, TMP . 'cache/phpspreadsheet/');
             $cacheFiles = count(glob(TMP . 'cache/phpspreadsheet/*.cache'));
         }
 
         // Return JSON stats and filename
         $data = [
-            'cache' => $cacheParam ? 'ON' : 'OFF',
+            'cache' => $cache ? 'ON' : 'OFF',
             'memory' => round($endMem/1024/1024,2),
             'peakMemory' => round($peakMem/1024/1024,2),
             'time' => round($endTime-$startTime,2),
@@ -232,5 +139,25 @@ class PagesController extends AppController
             ->withType($type)
             ->withDownload($filename)
             ->withFile($tempPath);
+    }
+
+    public function chartData()
+    {
+        $type = $this->getRequest()->getQuery('type');
+
+        $chartData = [];
+        if ($type !== null) {
+            $service = new BusinessService();
+            $data = $service->getSalesByProduct();
+
+            $formatter = match (strtolower($type)) {
+                'apexcharts' => new ApexChartsFormatter(),
+                'jqplot' => new JqPlotFormatter(),
+                default => new ChartJsFormatter(),
+            };
+            $chartData = $formatter->format($data);
+        }
+
+        $this->set(compact('chartData', 'type'));
     }
 }

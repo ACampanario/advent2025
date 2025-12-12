@@ -12,15 +12,9 @@ This use the file in config/config.yaml to setup environment with
 - PostgresSQL 15
 - PHP 8.2
 
-When it has started, enter on container
+After started install with composer and run migrations
 
 ```
-ddev ssh
-```
-
-Install with composer and run migrations
-
-```
-bin/cake composer install
-bin/cake migrations migrate
+ddev exec bin/cake composer install
+ddev exec bin/cake migrations migrate
 ```

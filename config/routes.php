@@ -59,6 +59,7 @@ return function (RouteBuilder $routes): void {
 
         $builder->connect('/export', ['controller' => 'Pages', 'action' => 'export']);
         $builder->connect('/download', ['controller' => 'Pages', 'action' => 'download']);
+        $builder->connect('/chart', ['controller' => 'Pages', 'action' => 'chartData']);
 
         /*
          * ...and connect the rest of 'Pages' controller's URLs.

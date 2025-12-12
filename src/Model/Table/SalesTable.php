@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Model\Table;
 
+use Cake\ORM\Query;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
 use Cake\ORM\Table;
@@ -83,5 +84,16 @@ class SalesTable extends Table
             ->notEmptyString('price');
 
         return $validator;
+    }
+
+    public function findSales(Query $query, array $options): Query
+    {
+        $query->orderBy(['Sales.id' => 'ASC']);
+
+        if ($options['options']['quantity'] !== null) {
+            $query->where(['Sales.quantity' => (int)$options['options']['quantity']]);
+        }
+
+        return $query;
     }
 }
