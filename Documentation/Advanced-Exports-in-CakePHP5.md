@@ -1,67 +1,211 @@
 # Advanced Exports in CakePHP5: Styled Excel, CSV, and Real-Time Charts
 
-### 1.- Run migrations
+### 1.- Requirements
 
-Run migration to create a table named "sales" with 10000 rows
-
-### 2.- Add with composer the library https://github.com/PHPOffice/PhpSpreadsheet
+Add with composer the phpoffice library
 
 ```
 composer require "phpoffice/phpspreadsheet"
 ```
 
-### 2.- Create the logic in an export function to query the data and generate an XLS or CSV file
+And another to fill a the sale table with 1000 rows
 
-for example in src/Controller/PagesController.php
+```
+composer require "fakerphp/faker"
+```
 
-and add to config/routes.php
+### 2.- Create sales table an fill with 10000 rows
+
+**config/Migrations/20251201101023_CreateSales.php**
+
+```
+public function change(): void
+    {
+        $table = $this->table('sales');
+        $table
+            ->addColumn('order_number', 'string', ['limit' => 20])
+            ->addColumn('customer_name', 'string', ['limit' => 50])
+            ->addColumn('product', 'string', ['limit' => 50])
+            ->addColumn('quantity', 'integer')
+            ->addColumn('price', 'decimal', ['precision' => 10, 'scale' => 2])
+            ->addColumn('created', 'datetime', ['default' => 'CURRENT_TIMESTAMP'])
+            ->create();
+
+        $faker = \Faker\Factory::create();
+
+        $rows = [];
+        for ($i = 0; $i < 10000; $i++) {
+            $rows[] = [
+                'order_number' => 'ORD' . str_pad((string)($i + 1), 5, '0', STR_PAD_LEFT),
+                'customer_name' => $faker->name(),
+                'product' => $faker->word(),
+                'quantity' => rand(1, 5),
+                'price' => $faker->randomFloat(2, 10, 500),
+                'created' => $faker->dateTimeBetween('-1 year', 'now')->format('Y-m-d H:i:s'),
+            ];
+        }
+
+        $this->table('sales')->insert($rows)->save();
+    }
+```
+
+### 3.- Create a function called export
+
+This function uses two services: one to fetch the data and another to generate the file that will be exported.
+
+This function returns a JSON with the statistics.
+
+Add to **config/routes.php**
 
 ```
 $builder->connect('/export', ['controller' => 'Pages', 'action' => 'export']);
 ```
 
+**src/Controller/PagesController.php**
+
+```
+public function export(): Response
+{
+// Measure start time and memory
+$startTime = microtime(true);
+
+        // Query params
+        $format = $this->getRequest()->getQuery('format') ?? 'xlsx'; // 'csv' o 'xlsx'
+        $filters['quantity'] = $this->getRequest()->getQuery('quantity');
+        $cache = $this->getRequest()->getQuery('cache') != null;
+
+        // Get data
+        $service = new SalesService($filters);
+        $sales = $service->getSales();
+
+        // Create spreadsheet
+        $service = new SpreadsheetService($cache);
+        $filename = $service->generate($sales, $format);
+
+        // Measure memory and final time
+        $endTime = microtime(true);
+        $endMem = memory_get_usage();
+        $peakMem = memory_get_peak_usage();
+
+        $cacheFiles = 0;
+        if ($cache) {
+            clearstatcache(true, TMP . 'cache/phpspreadsheet/');
+            $cacheFiles = count(glob(TMP . 'cache/phpspreadsheet/*.cache'));
+        }
+
+        // Return JSON stats and filename
+        $data = [
+            'cache' => $cache ? 'ON' : 'OFF',
+            'memory' => round($endMem/1024/1024,2),
+            'peakMemory' => round($peakMem/1024/1024,2),
+            'time' => round($endTime-$startTime,2),
+            'cacheFiles' => $cacheFiles,
+            'filename' => $filename
+        ];
+
+        $this->response = $this->response
+            ->withType('application/json')
+            ->withStringBody(json_encode($data));
+
+        return $this->response;
+    }
 ```
 
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Writer\Csv;
+### 4.- Create a service to fetch the data from the table
+
+**src/Service/SalesService.php**
+
+```
+<?php
+declare(strict_types=1);
+
+namespace App\Service;
+
+use Cake\ORM\Table;
+use Cake\ORM\TableRegistry;
+
+class SalesService
+{
+    protected Table $salesTable;
+    protected array $options = [];
+
+    public function __construct(array $params)
+    {
+        $this->salesTable = TableRegistry::getTableLocator()->get('Sales');
+        $this->options = $params;
+    }
+
+    /**
+     * Retrieves sales grouped by product
+     * The data is already cached by the finder
+     *
+     * @return array [['product' => 'Product A', 'total' => 10], ...]
+     */
+    public function getSales(): array
+    {
+        /** @uses \App\Model\Table\SalesTable::findSales() */
+        return $this->salesTable->find('sales', $this->options)->toArray();
+    }
+}
+```
+
+### 5.- Create a finder in the Sales table that retrieves data based on the passed parameters
+
+**src/Model/Table/SalesTable.php**
+
+```
+    public function findSales(Query $query, array $options): Query
+    {
+        $query->orderBy(['Sales.id' => 'ASC']);
+
+        if ($options['quantity'] !== null) {
+            $query->where(['Sales.quantity' => (int)$options['quantity']]);
+        }
+
+        return $query;
+    }
+```
+
+### 6.- Create the service to generate the file
+
+This service can receive in the constructor whether caching should be used or not.
+
+This service generates, according to the format, a CSV or Excel file with styling, as well as a chart.
+
+**src/Service/SpreadsheetService.php**
+
+```
+<?php
+declare(strict_types=1);
+
+namespace App\Service;
+
+use App\Lib\BlockFileCache;
+use Cake\ORM\Table;
 use PhpOffice\PhpSpreadsheet\Chart\Chart;
 use PhpOffice\PhpSpreadsheet\Chart\DataSeries;
 use PhpOffice\PhpSpreadsheet\Chart\DataSeriesValues;
 use PhpOffice\PhpSpreadsheet\Chart\PlotArea;
 use PhpOffice\PhpSpreadsheet\Chart\Title;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Settings;
-use App\Lib\BlockFileCache;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Csv;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
-...
-...
-...
-
-public function export(): Response
+class SpreadsheetService
+{
+    public function __construct(bool $cache)
     {
-        // Measure start time and memory
-        $startTime = microtime(true);
-
-        // Query params
-        $format = $this->request->getQuery('format') ?? 'xlsx'; // 'csv' o 'xlsx'
-        $quantityFilter = $this->request->getQuery('quantity');
-        $cacheParam = $this->request->getQuery('cache');
-
-        // Using cache
-        if ($cacheParam !== null) {
+        if ($cache) {
             $cachePath = TMP . 'cache' . DS . 'phpspreadsheet' . DS;
             $cache = new BlockFileCache($cachePath, 100);
             Settings::setCache($cache);
         }
+    }
 
-        // Get data
-        $query = $this->fetchTable('Sales')->find('all')->orderBy(['Sales.id' => 'ASC']);
-        if ($quantityFilter !== null) {
-            $query->where(['Sales.quantity' => (int)$quantityFilter]);
-        }
-        $sales = $query->toArray();
-
+    public function generate(array $sales, $format)
+    {
         // Create spreadsheet
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -95,26 +239,41 @@ public function export(): Response
             $rowNum++;
         }
 
-        // Graph Quantity vs Price
-        $totalQuantity = array_sum(array_map(fn($s) => $s->quantity, $sales));
-        $totalPrice = array_sum(array_map(fn($s) => $s->price, $sales));
+        // Graph
+        $labels = [
+            new DataSeriesValues('String', "Worksheet!A2:A10001", null, 100)
+        ];
 
-        $labels = [new DataSeriesValues('String', null, null, 2, ['Total Quantity', 'Total Price'])];
-        $values = [new DataSeriesValues('Number', null, null, 2, [$totalQuantity, $totalPrice])];
+        $quantityValues = new DataSeriesValues('Number', "Worksheet!D2:D101", null, 100);
+        $priceValues    = new DataSeriesValues('Number', "Worksheet!E2:E101", null, 100);
+
+        $quantityName = new DataSeriesValues('String', "Worksheet!D1", null, 1);
+        $priceName    = new DataSeriesValues('String', "Worksheet!E1", null, 1);
 
         $series = new DataSeries(
-            DataSeries::TYPE_PIECHART,
-            null,
-            range(0, count($values) - 1),
+            DataSeries::TYPE_BARCHART,
+            DataSeries::GROUPING_CLUSTERED,
+            [0, 1],
+            [$quantityName, $priceName],
             $labels,
-            [],
-            $values
+            [$quantityValues, $priceValues]
         );
 
+        $series->setPlotDirection(DataSeries::DIRECTION_COL);
+
         $plotArea = new PlotArea(null, [$series]);
-        $chart = new Chart('Sales Overview', new Title('Quantity vs Price'), null, $plotArea);
-        $chart->setTopLeftPosition('K2');
-        $chart->setBottomRightPosition('O17');
+        $title = new Title('Quantity & Price per Order');
+
+        $chart = new Chart(
+            'Sales Chart',
+            $title,
+            null,
+            $plotArea
+        );
+
+        $chart->setTopLeftPosition('I2');
+        $chart->setBottomRightPosition('U30');
+
         $sheet->addChart($chart);
 
         // Save file
@@ -128,44 +287,20 @@ public function export(): Response
         }
         $writer->save($tempPath);
 
-        // Measure memory and final time
-        $endTime = microtime(true);
-        $endMem = memory_get_usage();
-        $peakMem = memory_get_peak_usage();
-
-        $cacheFiles = 0;
-        if ($cacheParam !== null) {
-            clearstatcache(true, TMP . 'cache/phpspreadsheet/');
-            $cacheFiles = count(glob(TMP . 'cache/phpspreadsheet/*.cache'));
-        }
-
-        // Return JSON stats and filename
-        $data = [
-            'cache' => $cacheParam ? 'ON' : 'OFF',
-            'memory' => round($endMem/1024/1024,2),
-            'peakMemory' => round($peakMem/1024/1024,2),
-            'time' => round($endTime-$startTime,2),
-            'cacheFiles' => $cacheFiles,
-            'filename' => $filename
-        ];
-
-        $this->response = $this->response
-            ->withType('application/json')
-            ->withStringBody(json_encode($data));
-
-        return $this->response;
+        return $filename;
     }
+}
 ```
 
-### 3.- Create the logic for download file by his name
+### 7.- Create a function for downloading the file
 
-for example in src/Controller/PagesController.php
-
-and add to config/routes.php
+Add to **config/routes.php**
 
 ```
 $builder->connect('/download', ['controller' => 'Pages', 'action' => 'download']);
 ```
+
+**src/Controller/PagesController.php**
 
 ```
     public function download()
@@ -187,14 +322,13 @@ $builder->connect('/download', ['controller' => 'Pages', 'action' => 'download']
             ->withFile($tempPath);
     }
 ```
+### 8.- Create a class to use as cache
 
-### 4.- Create a class to use as cache
+This class is based on **Psr\SimpleCache\CacheInterface**
 
-This class is based on Psr\SimpleCache\CacheInterface
+Is used to write a file on disk in a minimum blockSize of 100, you can change by parameters, this affects memory and time
 
-Is used to write a file on disk in a minimum blockSize of 100
-
-for example in src/Lib/BlockFileCache.php
+**src/Lib/BlockFileCache.php**
 
 ```
 namespace App\Lib;
@@ -287,9 +421,11 @@ class BlockFileCache implements CacheInterface
 }
 ```
 
-# Functionality on the Front End of the Application
+# Frontend of the Application
 
-- There are several calls to the `export` method to:
+**templates/Pages/exports.php**
+
+- There are several calls to the export method to:
     - Export all
     - Export to CSV
     - Export applying a filter sent in the URL
