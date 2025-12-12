@@ -2,22 +2,40 @@
     <h2><?= __('Advanced Exports in CakePHP: Styled Excel, CSV, and Real-Time Charts');?></h2>
 </div>
 
-<h3><?= __('Without Cache (10000 rows)');?></h3>
+<h3><?= __('Without Cache (10000 rows)'); ?></h3>
 <div class="row">
     <ul class="col-md-6" style="min-height: 120px;">
-        <li><span class="loading-spinner"></span><a class="export" href="/export"><?= __('Export all to XLS');?></a></li>
-        <li><span class="loading-spinner"></span><a class="export" href="/export?format=csv"><?= __('Export all to CSV');?></a></li>
-        <li><span class="loading-spinner"></span><a class="export" href="/export?quantity=5"><?= __('Export filtering by quantity');?></a></li>
+        <li>
+            <span class="loading-spinner"></span>
+            <?= $this->Html->link(__('Export all to XLS'), ['controller' => 'Pages', 'action' => 'export'], ['class' => 'export']) ?>
+        </li>
+        <li>
+            <span class="loading-spinner"></span>
+            <?= $this->Html->link(__('Export all to CSV'), ['controller' => 'Pages', 'action' => 'export', '?' => ['format' => 'csv']], ['class' => 'export']) ?>
+        </li>
+        <li>
+            <span class="loading-spinner"></span>
+            <?= $this->Html->link(__('Export filtering by quantity'), ['controller' => 'Pages', 'action' => 'export', '?' => ['quantity' => 5]], ['class' => 'export']) ?>
+        </li>
     </ul>
     <div id="logWithoutCache" class="log col-md-6 p-2" style="min-height: 120px;"></div>
 </div>
 
-<h3><?= __('With Cache (10000 rows)');?></h3>
+<h3><?= __('With Cache (10000 rows)'); ?></h3>
 <div class="row">
     <ul class="col-md-6" style="min-height: 120px;">
-        <li><span class="loading-spinner"></span><a class="export" href="/export?cache=1"><?= __('Export all to XLS');?></a></li>
-        <li><span class="loading-spinner"></span><a class="export" href="/export?cache=1&format=csv"><?= __('Export all to CSV');?></a></li>
-        <li><span class="loading-spinner"></span><a class="export" href="/export?cache=1&quantity=5"><?= __('Export filtering by quantity');?></a></li>
+        <li>
+            <span class="loading-spinner"></span>
+            <?= $this->Html->link(__('Export all to XLS'), ['controller' => 'Pages', 'action' => 'export', '?' => ['cache' => 1]], ['class' => 'export']) ?>
+        </li>
+        <li>
+            <span class="loading-spinner"></span>
+            <?= $this->Html->link(__('Export all to CSV'), ['controller' => 'Pages', 'action' => 'export', '?' => ['cache' => 1, 'format' => 'csv']], ['class' => 'export']) ?>
+        </li>
+        <li>
+            <span class="loading-spinner"></span>
+            <?= $this->Html->link(__('Export filtering by quantity'), ['controller' => 'Pages', 'action' => 'export', '?' => ['cache' => 1, 'quantity' => 5]], ['class' => 'export']) ?>
+        </li>
     </ul>
     <div id="logWithCache" class="log col-md-6 p-2" style="min-height: 120px;"></div>
 </div>

@@ -76,6 +76,7 @@ class PagesController extends AppController
             throw new NotFoundException();
         }
     }
+
     public function export(): Response
     {
         // Measure start time and memory

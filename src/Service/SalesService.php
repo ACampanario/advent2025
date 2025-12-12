@@ -26,6 +26,6 @@ class SalesService
     public function getSales(): array
     {
         /** @uses \App\Model\Table\SalesTable::findSales() */
-        return $this->salesTable->find('sales', options: $this->options)->toArray();
+        return $this->salesTable->find('sales', $this->options)->toArray();
     }
 }

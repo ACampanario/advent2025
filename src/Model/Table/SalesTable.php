@@ -90,8 +90,8 @@ class SalesTable extends Table
     {
         $query->orderBy(['Sales.id' => 'ASC']);
 
-        if ($options['options']['quantity'] !== null) {
-            $query->where(['Sales.quantity' => (int)$options['options']['quantity']]);
+        if ($options['quantity'] !== null) {
+            $query->where(['Sales.quantity' => (int)$options['quantity']]);
         }
 
         return $query;
