@@ -5,6 +5,7 @@ This project explores and describes practical applications and uses of CakePHP 5
 (optional) [Using DDEV as environment to run this example](Documentation/Using-DDEV.md)
 
 * [Advanced Exports in CakePHP5: Styled Excel, CSV, and Real-Time Charts](Documentation/Advanced-Exports-in-CakePHP5.md)
+* [Graphs generations with different libraries: Chart.js, ApexCharts.js, JqPlot.js](Documentation/Chart-Generation-in-CakePHP5.md)
 
 Requirements
 ------------

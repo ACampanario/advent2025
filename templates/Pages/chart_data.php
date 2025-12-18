@@ -1,4 +1,4 @@
-<h2><?= __('Sales Chart');?></h2>
+<h2><?= __('Sales Chart - {0}', ucfirst($type));?></h2>
 <div class="mb-4">
     <a href="/pages/charts"><< Back</a>
 </div>
